@@ -9,7 +9,26 @@ import platform
 import pynvml
 import pyadl
 import subprocess
+import psycopg2
+import os
+import datetime
 app = FastAPI()
+
+
+def get_db_connection():
+    try:
+        connection = psycopg2.connect(
+            dbname="web_specs",
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PW"),
+            host=os.getenv("DB_HOST"),
+            port="5433"
+        )
+        print("Database connection successful")
+        return connection
+    except psycopg2.Error as e:
+        print(f"Error connecting to the database: {e}")
+        return None
 
 
 def get_gpu_stats():
@@ -69,6 +88,7 @@ def gather_cpu_times():
 def gather_cpu_percents():
     cpu_percents = psutil.cpu_percent(percpu=True)
     return {f"core_{i+1}": percent for i, percent in enumerate(cpu_percents)}
+
 def gather_virtual_memory_stats():
     virtual_memory = psutil.virtual_memory()
     return virtual_memory[1], virtual_memory[2], virtual_memory[3]
@@ -110,6 +130,62 @@ def get_disk_io_counters():
         }
     return result
 
+def log_data(system_info):
+    try:
+        now = datetime.datetime.now()
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            
+            #CPU logging
+            num_cpus = len(system_info['cpu']['user_time'].keys())
+            for i in range(0,num_cpus):
+                core_id = i+1
+                user_time = system_info['cpu']['user_time'][f'core_{core_id}']
+                system_time = system_info['cpu']['system_time'][f'core_{core_id}']
+                idle_time = system_info['cpu']['idle_time'][f'core_{core_id}']
+                percent = system_info['cpu']['percent'][f'core_{core_id}']
+                cursor.execute(f"""INSERT INTO 
+                    cpu_metrics (timestamp, core_id, user_time, system_time, idle_time, percent_usage)
+                    VALUES ('{now}', {core_id}, {user_time}, {system_time}, {idle_time}, {percent})"""
+                )
+            
+            # IO
+            for raw_disk in system_info['io']:
+                cursor.execute(f"""INSERT INTO
+                disk_io_metrics (timestamp, device_name, read_count, write_count, read_bytes, write_bytes, read_time, write_time)
+                VALUES ('{now}', '{raw_disk}', {system_info['io'][raw_disk]['read_count']}, {system_info['io'][raw_disk]['write_count']}, {system_info['io'][raw_disk]['read_bytes']}, {system_info['io'][raw_disk]['write_bytes']}, {system_info['io'][raw_disk]['read_time']}, {system_info['io'][raw_disk]['write_time']})"""
+                )
+            
+            # Disk Usage
+            for disk in system_info['disk_usage']:
+                cursor.execute(f"""INSERT INTO
+                    disk_usage_metrics (timestamp, device_name, mountpoint, fstype, total_space, used_space, free_space, percent_usage)
+                    VALUES ('{now}', '{disk}', '{system_info['disk_usage'][disk]['mountpoint']}', '{system_info['disk_usage'][disk]['fstype']}', {system_info['disk_usage'][disk]['total']}, {system_info['disk_usage'][disk]['used']}, {system_info['disk_usage'][disk]['free']}, {system_info['disk_usage'][disk]['percent']})"""
+                )
+            
+            # Memory
+            cursor.execute(f"""INSERT INTO
+                    memory_metrics (timestamp, available_memory, used_memory, memory_percent_usage)
+                    VALUES ('{now}', {system_info['memory']['available_memory']}, {system_info['memory']['used_memory']}, {system_info['memory']['memory_percent_usage']})"""
+                )
+            
+            # Swap Memory
+            cursor.execute(f"""INSERT INTO
+                    swap_memory_metrics (timestamp, used_memory, free_memory, percent_usage)
+                    VALUES ('{now}', {system_info['swap_memory']['used_memory']}, {system_info['swap_memory']['free_memory']}, {system_info['swap_memory']['percent_usage']})"""
+                )
+            
+            conn.commit()
+
+    except Exception as e:
+        print(e)
+        conn.rollback()
+        return False
+    
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
 @app.websocket("/ws/metrics")
 async def metric_ws(ws: WebSocket):
     await ws.accept()
@@ -144,12 +220,8 @@ async def metric_ws(ws: WebSocket):
 
             # IO
             system_info['io'] = get_disk_io_counters()
-
-            # Ping 
-            #system_info['ping'] = get_ping()
-
-            # GPU 
-            #system_info['gpu'] = get_gpu_stats()
+            
+            log_data(system_info)
 
             await ws.send_text(json.dumps(system_info))
             await asyncio.sleep(3)
