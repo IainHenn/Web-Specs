@@ -1,0 +1,10 @@
+fastapi
+psutil
+pynvml
+pyadl
+pySMART
+uptime
+ping3
+uvicorn
+websockets
+ifcfg
