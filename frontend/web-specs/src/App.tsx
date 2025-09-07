@@ -17,8 +17,8 @@ function flattenMetrics(obj: any, prefix = ''): Record<string, number> {
 }
 
 // Generic grid for a group of metrics
-function MetricsGroup({ title, data, history }: { title: string, data: any, history: Record<string, number[]> }) {
-  const flat = flattenMetrics(data, title);
+function MetricsGroup({ group, title, metric, data, history}: { group: string, title: string, metric: Record<string,string>, data: any, history: Record<string, number[]> }) {
+  const flat = flattenMetrics(data, group);
   return (
     <div style={{ marginBottom: '2rem' }}>
       <h2 style={{
@@ -40,7 +40,7 @@ function MetricsGroup({ title, data, history }: { title: string, data: any, hist
         }}
       >
         {Object.entries(flat).map(([key, value]) => (
-          <div
+            <div
             key={key}
             style={{
               background: '#23272f',
@@ -50,44 +50,55 @@ function MetricsGroup({ title, data, history }: { title: string, data: any, hist
               boxShadow: '0 2px 8px #0008',
               color: '#eee',
             }}
-          >
-            <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.5rem' }}>{key.replace(`${title}.`, '')}</div>
+            >
+            <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.5rem' }}>{key.replace(`${group}.`, '')}</div>
             <div style={{ fontSize: '1.5rem', marginBottom: '1rem', color: '#00e676' }}>{value}</div>
             <Plot
               data={[
-                {
-                  x: Array.from({ length: history[key]?.length ?? 0 }, (_, i) => i),
-                  y: history[key] ?? [],
-                  type: 'scatter',
-                  mode: 'lines',
-                  line: { color: '#00e676', width: 3, shape: 'spline' },
-                  fill: 'tozeroy',
-                  fillcolor: 'rgba(0,230,118,0.1)',
-                },
+              {
+                x: Array.from({ length: history[key]?.length ?? 0 }, (_, i) => i),
+                y: history[key] ?? [],
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: '#00e676', width: 3, shape: 'spline' },
+                fill: 'tozeroy',
+                fillcolor: 'rgba(0,230,118,0.1)',
+              },
               ]}
               layout={{
-                paper_bgcolor: '#23272f',
-                plot_bgcolor: '#23272f',
-                font: { color: '#eee' },
-                width: 380,
-                height: 180,
-                margin: { t: 30, r: 10, l: 40, b: 30 },
-                xaxis: {
-                  showgrid: false,
-                  zeroline: false,
-                  color: '#aaa',
+              paper_bgcolor: '#23272f',
+              plot_bgcolor: '#23272f',
+              font: { color: '#eee' },
+              width: 380,
+              height: 180,
+              margin: { t: 30, r: 10, l: 40, b: 30 },
+              xaxis: {
+                showgrid: false,
+                zeroline: false,
+                color: '#aaa',
+              },
+              yaxis: {
+                showgrid: true,
+                automargin: true,
+                gridcolor: '#333',
+                zeroline: false,
+                color: '#aaa',
+                title: {
+                text: metric[
+                  Object.keys(metric).find(m =>
+                  key.endsWith(m) ||
+                  key.split('.').some(seg => seg === m)
+                  ) ?? ''
+                ] ?? '',
+                font: { color: '#eee', size: 14 },
+                standoff: 15
                 },
-                yaxis: {
-                  showgrid: true,
-                  gridcolor: '#333',
-                  zeroline: false,
-                  color: '#aaa',
-                },
+              },
               }}
               config={{ displayModeBar: false, responsive: true }}
               style={{ width: '100%', height: '100%' }}
             />
-          </div>
+            </div>
         ))}
       </div>
     </div>
@@ -98,6 +109,36 @@ export default function App() {
   const [metrics, setMetrics] = useState<any>(null);
   const [history, setHistory] = useState<Record<string, number[]>>({});
   const historyRef = useRef<Record<string, number[]>>({});
+
+  const unitMappings: Record<string, string> = {
+    // CPU
+    'user_time': 'Seconds',
+    'system_time': 'Seconds',
+    'idle_time': 'Seconds',
+    'percent': 'Percent (%)',
+    // Memory, Swap Memory
+    'available_memory': 'Bytes',
+    'used_memory': 'Bytes',
+    'memory_percent_usage': 'Percent (%)',
+    'free_memory': 'Bytes',
+    'percent_usage': 'Percent (%)',
+    // Disk Usage
+    'total': 'Bytes',
+    'used': 'Bytes',
+    'free': 'Bytes',
+    //'percent': 'Percent (%)',
+    // IO
+    'read_count': 'Count',
+    'write_count': 'Count',
+    'read_bytes': 'Bytes',
+    'write_bytes': 'Bytes',
+    'read_time': 'Ms',
+    'write_time': 'Ms',
+    // Ping
+    'ping': 'Ms'
+    // GPU (example, add as needed)
+  };
+
 
   useEffect(() => {
     const ws = new WebSocket("ws://127.0.0.1:8000/ws/metrics");
@@ -163,13 +204,13 @@ export default function App() {
         </h1>
         {metrics && (
           <>
-            {metrics.cpu && <MetricsGroup title="CPU" data={metrics.cpu} history={history} />}
-            {metrics.memory && <MetricsGroup title="Memory" data={metrics.memory} history={history} />}
-            {metrics.swap_memory && <MetricsGroup title="Swap Memory" data={metrics.swap_memory} history={history} />}
-            {metrics.disk_usage && <MetricsGroup title="Disk Usage" data={metrics.disk_usage} history={history} />}
-            {metrics.io && <MetricsGroup title="IO" data={metrics.io} history={history} />}
-            {metrics.ping !== undefined && <MetricsGroup title="ping" data={{ ping: metrics.ping }} history={history} />}
-            {metrics.gpu && <MetricsGroup title="gpu" data={metrics.gpu} history={history} />}
+            {metrics.cpu && <MetricsGroup metric={unitMappings} group="cpu" title="CPU" data={metrics.cpu} history={history} />}
+            {metrics.memory && <MetricsGroup metric={unitMappings} group="memory" title="Memory" data={metrics.memory} history={history} />}
+            {metrics.swap_memory && <MetricsGroup metric={unitMappings} group="swap_memory" title="Swap Memory" data={metrics.swap_memory} history={history} />}
+            {metrics.disk_usage && <MetricsGroup metric={unitMappings} group="disk_usage" title="Disk Usage" data={metrics.disk_usage} history={history} />}
+            {metrics.io && <MetricsGroup metric={unitMappings} group="io" title="IO" data={metrics.io} history={history} />}
+            {metrics.ping !== undefined && <MetricsGroup metric={unitMappings} group="ping" title="ping" data={{ ping: metrics.ping }} history={history} />}
+            {metrics.gpu && <MetricsGroup metric={unitMappings} group="gpu" title="gpu" data={metrics.gpu} history={history} />}
           </>
         )}
       </div>
