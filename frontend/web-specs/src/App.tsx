@@ -105,6 +105,187 @@ function MetricsGroup({ group, title, metric, data, history}: { group: string, t
   );
 }
 
+const groupbyOptions = [
+  { label: 'Minute', value: 'minute' },
+  { label: 'Hour', value: 'hour' },
+  { label: 'Day', value: 'day' },
+  { label: 'Month', value: 'month' },
+  { label: 'Year', value: 'year' },
+];
+const typeOptions = [
+  { label: 'Average', value: 'avg' },
+  { label: 'Maximum', value: 'max' },
+  { label: 'Minimum', value: 'min' },
+];
+
+// Add segmented control styles
+const segmentedControlStyle = {
+  display: 'inline-flex',
+  borderRadius: '0.5rem',
+  overflow: 'hidden',
+  border: '1px solid #333',
+  background: '#23272f',
+};
+
+const segmentedButtonStyle = (active: boolean) => ({
+  padding: '0.5rem 1.2rem',
+  background: active ? '#00e676' : 'transparent',
+  color: active ? '#181818' : '#eee',
+  border: 'none',
+  outline: 'none',
+  cursor: 'pointer',
+  fontWeight: 600,
+  fontSize: '1rem',
+  transition: 'background 0.2s, color 0.2s',
+});
+
+// TimeseriesGraph component
+function TimeseriesGraph({
+  title,
+  endpoint,
+  valueKey,
+  deviceKey,
+  periodKey,
+  yLabel,
+  multiDevice = false,
+}: {
+  title: string,
+  endpoint: string,
+  valueKey: string,
+  deviceKey?: string,
+  periodKey?: string,
+  yLabel: string,
+  multiDevice?: boolean,
+}) {
+  const [groupby, setGroupby] = useState('hour');
+  const [type, setType] = useState('avg');
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(
+      `${endpoint}?type=${type}&groupby=${groupby}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    )
+    .then(res => res.json())
+    .then(json => {
+      console.log("json: ", json);
+      const key = Object.keys(json).find(k => k.endsWith('timeseries'));
+      setData(json[key] || []);
+      setLoading(false);
+    });
+  }, [endpoint, groupby, type]);
+
+  // Prepare traces for Plotly
+  let traces: any[] = [];
+  if (multiDevice) {
+    const devices = Array.from(new Set(data.map(d => d[deviceKey!])));
+    traces = devices.map(device => ({
+      x: data.filter(d => d[deviceKey!] === device).map(d => d[periodKey!]),
+      y: data.filter(d => d[deviceKey!] === device).map(d => d[valueKey]),
+      type: 'scatter',
+      mode: 'lines+markers',
+      name: device,
+      line: { shape: 'spline' },
+    }));
+  } else {
+    traces = [
+      {
+        x: data.map(d => d[periodKey!]),
+        y: data.map(d => d[valueKey]),
+        type: 'scatter',
+        mode: 'lines+markers',
+        line: { shape: 'spline', color: '#00e676', width: 3 },
+        fill: 'tozeroy',
+        fillcolor: 'rgba(0,230,118,0.1)',
+        name: title,
+      },
+    ];
+  }
+
+  return (
+    <div style={{
+      background: '#23272f',
+      border: '1px solid #333',
+      borderRadius: '1rem',
+      padding: '1.5rem',
+      color: '#eee',
+      boxShadow: '0 2px 8px #0008',
+      maxWidth: 800,
+      width: '150%',
+    }}>
+      <div style={{ fontWeight: 600, fontSize: '1.2rem', marginBottom: '1rem', color: '#00e676' }}>{title}</div>
+      <div style={{ display: 'flex', gap: '2rem', marginBottom: '1rem', alignItems: 'center' }}>
+        <div>
+          <span style={{ marginRight: '0.5rem', fontWeight: 500 }}>Group by:</span>
+          <span style={segmentedControlStyle}>
+            {groupbyOptions.map(opt => (
+              <button
+                key={opt.value}
+                style={segmentedButtonStyle(groupby === opt.value)}
+                onClick={() => setGroupby(opt.value)}
+                type="button"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </span>
+        </div>
+        <div>
+          <span style={{ marginRight: '0.5rem', fontWeight: 500 }}>Type:</span>
+          <span style={segmentedControlStyle}>
+            {typeOptions.map(opt => (
+              <button
+                key={opt.value}
+                style={segmentedButtonStyle(type === opt.value)}
+                onClick={() => setType(opt.value)}
+                type="button"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </span>
+        </div>
+      </div>
+      {loading ? <div>Loading...</div> :
+        <Plot
+          data={traces}
+          layout={{
+            paper_bgcolor: '#23272f',
+            plot_bgcolor: '#23272f',
+            font: { color: '#eee' },
+            width: 760,
+            height: 320,
+            margin: { t: 30, r: 10, l: 40, b: 30 },
+            xaxis: {
+              title: 'Time',
+              color: '#aaa',
+              showgrid: false,
+              zeroline: false,
+              type: 'date',
+            },
+            yaxis: {
+              title: yLabel,
+              color: '#aaa',
+              showgrid: true,
+              gridcolor: '#333',
+              zeroline: false,
+            },
+            legend: { orientation: 'h', y: -0.2, font: { color: '#eee' } },
+          }}
+          config={{ displayModeBar: false, responsive: true }}
+          style={{ width: '100%', height: '100%' }}
+        />
+      }
+    </div>
+  );
+}
+
 export default function App() {
   const [metrics, setMetrics] = useState<any>(null);
   const [history, setHistory] = useState<Record<string, number[]>>({});
@@ -182,15 +363,15 @@ export default function App() {
         borderRadius: '2rem',
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          maxWidth: '1400px',
-          width: 'auto',
-        }}
-      >
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            maxWidth: '1400px',
+            width: 'auto',
+          }}
+        >
         <h1 style={{
           textAlign: 'center',
           fontWeight: 700,
@@ -202,6 +383,79 @@ export default function App() {
         }}>
           Web Specs
         </h1>
+        {/* Timeseries graphs */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+            gap: '20rem',
+            width: '100%',
+            justifyItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto',
+          }}
+        >
+          <TimeseriesGraph
+            title="Memory Usage (%)"
+            endpoint="http://127.0.0.1:8000/memory/percent/timeseries"
+            valueKey="value"
+            periodKey="period"
+            yLabel="Percent (%)"
+          />
+          <TimeseriesGraph
+            title="Swap Memory Usage (%)"
+            endpoint="http://127.0.0.1:8000/swap_memory/percent/timeseries"
+            valueKey="value"
+            periodKey="period"
+            yLabel="Percent (%)"
+          />
+          <TimeseriesGraph
+            title="CPU Usage (%)"
+            endpoint="http://127.0.0.1:8000/cpu/percent/timeseries"
+            valueKey="value"
+            periodKey="period"
+            deviceKey="core_id"
+            yLabel="Percent (%)"
+            multiDevice={true}
+          />
+          <TimeseriesGraph
+            title="IO Read Bytes"
+            endpoint="http://127.0.0.1:8000/io/read/bytes/timeseries"
+            valueKey="value"
+            periodKey="period"
+            deviceKey="device_name"
+            yLabel="Bytes"
+            multiDevice={true}
+          />
+          <TimeseriesGraph
+            title="IO Write Bytes"
+            endpoint="http://127.0.0.1:8000/io/write/bytes/timeseries"
+            valueKey="value"
+            periodKey="period"
+            deviceKey="device_name"
+            yLabel="Bytes"
+            multiDevice={true}
+          />
+          <TimeseriesGraph
+            title="IO Read Time"
+            endpoint="http://127.0.0.1:8000/io/read/time/timeseries"
+            valueKey="value"
+            periodKey="period"
+            deviceKey="device_name"
+            yLabel="Ms"
+            multiDevice={true}
+          />
+          <TimeseriesGraph
+            title="IO Write Time"
+            endpoint="http://127.0.0.1:8000/io/write/time/timeseries"
+            valueKey="value"
+            periodKey="period"
+            deviceKey="device_name"
+            yLabel="Ms"
+            multiDevice={true}
+          />
+        </div>
+        {/* Live metrics groups */}
         {metrics && (
           <>
             {metrics.cpu && <MetricsGroup metric={unitMappings} group="cpu" title="CPU" data={metrics.cpu} history={history} />}

@@ -12,8 +12,18 @@ import subprocess
 import psycopg2
 import os
 import datetime
+
+from fastapi.responses import JSONResponse as jsonify
+from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def get_db_connection():
     try:
@@ -134,6 +144,7 @@ def log_data(system_info):
     try:
         now = datetime.datetime.now()
         conn = get_db_connection()
+        print(f"conn: {conn}")
         with conn.cursor() as cursor:
             
             #CPU logging
@@ -186,6 +197,541 @@ def log_data(system_info):
         if 'conn' in locals():
             conn.close()
 
+'''
+PLANS:
+- overall/monthly/yearly/daily/hourly average/max/min CPU (per CPU) /memory/swap memory percent usage --> backend done
+- overall/monthly/yearly/daily/hourly average/max/min IO read/write --> backend routes done
+- cpu/memory/swap memory distribution, read/write distribution
+- violin plot for disk io latency
+- notif system 
+- config page + thresholds for notif
+- static info page (ip, system info, etc)
+- possible RAG based chatbot......?
+'''
+
+#Rest-like Routes
+@app.get("/io/read/bytes")
+def io_read_bytes(type: str='avg', time: str = 'overall'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        time_query = ""
+        if time == 'hourly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+        elif time == 'daily':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+        elif time == 'monthly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+        elif time == 'yearly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"SELECT device_name, {type.upper()}(read_bytes) FROM disk_io_metrics {time_query} GROUP BY device_name"
+            )
+            data = cursor.fetchall()
+            if data:
+                return jsonify({"io_read_bytes": {row[0]: round(float(row[1]),2) for row in data}})
+            else:
+                return jsonify({"error": f"Unable to grab {type} data for IO"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/io/write/bytes")
+def io_write_bytes(type: str='avg', time: str = 'overall'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        time_query = ""
+        if time == 'hourly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+        elif time == 'daily':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+        elif time == 'monthly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+        elif time == 'yearly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"SELECT device_name, {type.upper()}(write_bytes) FROM disk_io_metrics {time_query} GROUP BY device_name"
+            )
+            data = cursor.fetchall()
+            if data:
+                return jsonify({"io_write_bytes": {row[0]: round(float(row[1]),2) for row in data}})
+            else:
+                return jsonify({"error": f"Unable to grab {type} data for IO"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/io/read/time")
+def io_read_time(type: str='avg', time: str = 'overall'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        time_query = ""
+        if time == 'hourly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+        elif time == 'daily':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+        elif time == 'monthly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+        elif time == 'yearly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"SELECT device_name, {type.upper()}(read_time) FROM disk_io_metrics {time_query} GROUP BY device_name"
+            )
+            data = cursor.fetchall()
+            if data:
+                return jsonify({"io_read_time": {row[0]: round(float(row[1]),2) for row in data}})
+            else:
+                return jsonify({"error": f"Unable to grab {type} data for IO"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/io/write/time")
+def io_write_time(type: str='avg', time: str = 'overall'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        time_query = ""
+        if time == 'hourly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+        elif time == 'daily':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+        elif time == 'monthly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+        elif time == 'yearly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"SELECT device_name, {type.upper()}(write_time) FROM disk_io_metrics {time_query} GROUP BY device_name"
+            )
+            data = cursor.fetchall()
+            if data:
+                return jsonify({"io_write_time": {row[0]: round(float(row[1]),2) for row in data}})
+            else:
+                return jsonify({"error": f"Unable to grab {type} data for IO"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/memory/percent")
+def memory_percent(type: str = 'avg', time: str = 'overall'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        time_query = ""
+        if time == 'hourly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+        elif time == 'daily':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+        elif time == 'monthly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+        elif time == 'yearly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(f"SELECT {type.upper()}(memory_percent_usage) FROM memory_metrics {time_query}")
+            data = cursor.fetchone()
+            if data:
+                return jsonify({"memory_percent": round(float(data[0]),2)})
+            else:
+                return jsonify({"error": f"Unable to grab {type} data for memory"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/memory/percent/timeseries")
+def memory_percent_timeseries(type: str = 'avg', groupby: str = 'hour'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        # Set time window and truncation for grouping
+        if groupby == 'minute':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+            trunc = "minute"
+        elif groupby == 'hour':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+            trunc = "hour"
+        elif groupby == 'day':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+            trunc = "day"
+        elif groupby == 'month':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+            trunc = "month"
+        elif groupby == 'year':
+            time_query = ""
+            trunc = "year"
+        else:
+            return jsonify({"error": "Invalid groupby parameter. Use 'minute', 'hour', 'day', 'month', or 'year'."}), 400
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT date_trunc('{trunc}', timestamp) AS period, {type.upper()}(memory_percent_usage)
+                FROM memory_metrics
+                {time_query}
+                GROUP BY date_trunc('{trunc}', timestamp)
+                ORDER BY period
+                """
+            )
+            data = cursor.fetchall()
+            if data:
+                return jsonify({"memory_percent_timeseries": [
+                    {"period": row[0].isoformat(), "value": round(float(row[1]), 2)} for row in data
+                ]})
+            else:
+                return jsonify({"error": f"Unable to grab {type} timeseries data for memory"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/swap_memory/percent")
+def swap_memory_percent(type: str = 'avg', time: str = 'overall'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        time_query = ""
+        if time == 'hourly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+        elif time == 'daily':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+        elif time == 'monthly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+        elif time == 'yearly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(f"SELECT {type.upper()}(percent_usage) FROM swap_memory_metrics {time_query}")
+            data = cursor.fetchone()
+            if data:
+                return jsonify({"memory_percent": data[0]})
+            else:
+                return jsonify({"error": f"Unable to grab {type} data for swap memory"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/swap_memory/percent/timeseries")
+def swap_memory_percent_timeseries(type: str = 'avg', groupby: str = 'hour'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        # Set time window and truncation for grouping
+        if groupby == 'minute':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+            trunc = "minute"
+        elif groupby == 'hour':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+            trunc = "hour"
+        elif groupby == 'day':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+            trunc = "day"
+        elif groupby == 'month':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+            trunc = "month"
+        elif groupby == 'year':
+            time_query = ""
+            trunc = "year"
+        else:
+            return jsonify({"error": "Invalid groupby parameter. Use 'minute', 'hour', 'day', 'month', or 'year'."}), 400
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT date_trunc('{trunc}', timestamp) AS period, {type.upper()}(percent_usage)
+                FROM swap_memory_metrics
+                {time_query}
+                GROUP BY date_trunc('{trunc}', timestamp)
+                ORDER BY period
+                """
+            )
+            data = cursor.fetchall()
+            if data:
+                return jsonify({"swap_memory_percent_timeseries": [
+                    {"period": row[0].isoformat(), "value": round(float(row[1]), 2)} for row in data
+                ]})
+            else:
+                return jsonify({"error": f"Unable to grab {type} timeseries data for memory"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/cpu/percent")
+def cpu_percent(type: str = 'avg', time: str = 'overall'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        time_query = ""
+        if time == 'hourly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+        elif time == 'daily':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+        elif time == 'monthly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+        elif time == 'yearly':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"SELECT core_id, {type.upper()}(percent_usage) FROM cpu_metrics {time_query} GROUP BY core_id"
+            )
+            data = cursor.fetchall()
+            if data:
+                return jsonify({"cpu_percent": {row[0]: round(row[1], 2) for row in data}})
+            else:
+                return jsonify({"error": f"Unable to grab {type} data for CPU cores"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/cpu/percent/timeseries")
+def cpu_percent_timeseries(type: str = 'avg', groupby: str = 'hour'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        # Set time window and truncation for grouping
+        if groupby == 'minute':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+            trunc = "minute"
+        elif groupby == 'hour':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+            trunc = "hour"
+        elif groupby == 'day':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+            trunc = "day"
+        elif groupby == 'month':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+            trunc = "month"
+        elif groupby == 'year':
+            time_query = ""
+            trunc = "year"
+        else:
+            return jsonify({"error": "Invalid groupby parameter. Use 'minute', 'hour', 'day', 'month', or 'year'."}), 400
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT core_id, date_trunc('{trunc}', timestamp) AS period, {type.upper()}(percent_usage)
+                FROM cpu_metrics
+                {time_query}
+                GROUP BY core_id, date_trunc('{trunc}', timestamp)
+                ORDER BY core_id, period
+                """
+            )
+            data = cursor.fetchall()
+            if data:
+                return jsonify({"cpu_percent_timeseries": [
+                    {"core_id": row[0], "period": row[1].isoformat(), "value": round(float(row[2]), 2)} for row in data
+                ]})
+            else:
+                return jsonify({"error": f"Unable to grab {type} timeseries data for memory"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/io/read/bytes/timeseries")
+def io_read_bytes_timeseries(type: str = 'avg', groupby: str = 'hour'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        # Set time window and truncation for grouping
+        if groupby == 'minute':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+            trunc = "minute"
+        elif groupby == 'hour':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+            trunc = "hour"
+        elif groupby == 'day':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+            trunc = "day"
+        elif groupby == 'month':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+            trunc = "month"
+        elif groupby == 'year':
+            time_query = ""
+            trunc = "year"
+        else:
+            return jsonify({"error": "Invalid groupby parameter. Use 'minute', 'hour', 'day', 'month', or 'year'."}), 400
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT device_name, date_trunc('{trunc}', timestamp) AS period, {type.upper()}(read_bytes)
+                FROM disk_io_metrics
+                {time_query}
+                GROUP BY device_name, date_trunc('{trunc}', timestamp)
+                ORDER BY device_name, period
+                """
+            )
+            data = cursor.fetchall()
+            if data:
+                return jsonify({"io_read_bytes_timeseries": [
+                    {"device_name": row[0], "period": row[1].isoformat(), "value": round(float(row[2]), 2)} for row in data
+                ]})
+            else:
+                return jsonify({"error": f"Unable to grab {type} timeseries data for IO"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/io/write/bytes/timeseries")
+def io_write_bytes_timeseries(type: str = 'avg', groupby: str = 'hour'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        # Set time window and truncation for grouping
+        if groupby == 'minute':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+            trunc = "minute"
+        elif groupby == 'hour':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+            trunc = "hour"
+        elif groupby == 'day':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+            trunc = "day"
+        elif groupby == 'month':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+            trunc = "month"
+        elif groupby == 'year':
+            time_query = ""
+            trunc = "year"
+        else:
+            return jsonify({"error": "Invalid groupby parameter. Use 'minute', 'hour', 'day', 'month', or 'year'."}), 400
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT device_name, date_trunc('{trunc}', timestamp) AS period, {type.upper()}(write_bytes)
+                FROM disk_io_metrics
+                {time_query}
+                GROUP BY device_name, date_trunc('{trunc}', timestamp)
+                ORDER BY device_name, period
+                """
+            )
+            data = cursor.fetchall()
+            if data:
+                return jsonify({"io_write_bytes_timeseries": [
+                    {"device_name": row[0], "period": row[1].isoformat(), "value": round(float(row[2]), 2)} for row in data
+                ]})
+            else:
+                return jsonify({"error": f"Unable to grab {type} timeseries data for IO"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/io/read/time/timeseries")
+def io_read_time_timeseries(type: str = 'avg', groupby: str = 'hour'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        # Set time window and truncation for grouping
+        if groupby == 'minute':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+            trunc = "minute"
+        elif groupby == 'hour':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+            trunc = "hour"
+        elif groupby == 'day':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+            trunc = "day"
+        elif groupby == 'month':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+            trunc = "month"
+        elif groupby == 'year':
+            time_query = ""
+            trunc = "year"
+        else:
+            return jsonify({"error": "Invalid groupby parameter. Use 'minute', 'hour', 'day', 'month', or 'year'."}), 400
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT device_name, date_trunc('{trunc}', timestamp) AS period, {type.upper()}(read_time)
+                FROM disk_io_metrics
+                {time_query}
+                GROUP BY device_name, date_trunc('{trunc}', timestamp)
+                ORDER BY device_name, period
+                """
+            )
+            data = cursor.fetchall()
+            if data:
+                return jsonify({"io_read_time_timeseries": [
+                    {"device_name": row[0], "period": row[1].isoformat(), "value": round(float(row[2]), 2)} for row in data
+                ]})
+            else:
+                return jsonify({"error": f"Unable to grab {type} timeseries data for IO"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/io/write/time/timeseries")
+def io_write_time_timeseries(type: str = 'avg', groupby: str = 'hour'):
+    try:
+        if type not in ['max', 'min', 'avg']:
+            return jsonify({"error": "Invalid type parameter. Use 'max', 'min', or 'avg'."}), 400
+
+        # Set time window and truncation for grouping
+        if groupby == 'minute':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 hour'"
+            trunc = "minute"
+        elif groupby == 'hour':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 day'"
+            trunc = "hour"
+        elif groupby == 'day':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 month'"
+            trunc = "day"
+        elif groupby == 'month':
+            time_query = "WHERE timestamp >= NOW() - INTERVAL '1 year'"
+            trunc = "month"
+        elif groupby == 'year':
+            time_query = ""
+            trunc = "year"
+        else:
+            return jsonify({"error": "Invalid groupby parameter. Use 'minute', 'hour', 'day', 'month', or 'year'."}), 400
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT device_name, date_trunc('{trunc}', timestamp) AS period, {type.upper()}(write_time)
+                FROM disk_io_metrics
+                {time_query}
+                GROUP BY device_name, date_trunc('{trunc}', timestamp)
+                ORDER BY device_name, period
+                """
+            )
+            data = cursor.fetchall()
+            if data:
+                return jsonify({"io_write_time_timeseries": [
+                    {"device_name": row[0], "period": row[1].isoformat(), "value": round(float(row[2]), 2)} for row in data
+                ]})
+            else:
+                return jsonify({"error": f"Unable to grab {type} timeseries data for IO"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+#Web Socket Routes
 @app.websocket("/ws/metrics")
 async def metric_ws(ws: WebSocket):
     await ws.accept()
