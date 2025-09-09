@@ -294,12 +294,14 @@ function BarChartSingleMetric({
   valueKey,
   labelKey,
   color = '#00e676',
+  refreshKey,
 }: {
   title: string,
   endpoint: string,
   valueKey: string,
   labelKey?: string,
   color?: string,
+  refreshKey?: number,
 }) {
   const [type, setType] = useState('avg');
   const [time, setTime] = useState('hourly');
@@ -311,10 +313,15 @@ function BarChartSingleMetric({
     fetch(`${endpoint}?type=${type}&time=${time}`)
       .then(res => res.json())
       .then(json => {
-        setData(json[valueKey] || {});
+        let val = json[valueKey];
+        if (typeof val === 'number') {
+          setData({ [title]: val });
+        } else {
+          setData(val || {});
+        }
         setLoading(false);
       });
-  }, [endpoint, type, time, valueKey]);
+  }, [endpoint, type, time, valueKey, refreshKey]);
 
   // Prepare bar chart data
   const labels = Object.keys(data);
@@ -413,11 +420,21 @@ function BarChartSingleMetric({
   );
 }
 
+function Page({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ width: '100%', maxWidth: 1200, margin: '0 auto', padding: '2rem 0' }}>
+      {children}
+    </div>
+  );
+}
+
 export default function App() {
   const [metrics, setMetrics] = useState<any>(null);
   const [history, setHistory] = useState<Record<string, number[]>>({});
   const historyRef = useRef<Record<string, number[]>>({});
   const [refreshKey, setRefreshKey] = useState(0);
+  const [selectedPage, setSelectedPage] = useState('realtime');
+  const [barRefreshKey, setBarRefreshKey] = useState(0);
 
   const unitMappings: Record<string, string> = {
     // CPU
@@ -477,6 +494,13 @@ export default function App() {
     return () => ws.close();
   }, []);
 
+  const menuItems = [
+    { label: 'Real Time Data', value: 'realtime' },
+    { label: 'Past Data (Time Series)', value: 'timeseries' },
+    { label: 'Past Data (Bar Charts)', value: 'barcharts' },
+    { label: 'Past Data (Distributions)', value: 'distributions' },
+  ];
+
   return (
     <div
       style={{
@@ -511,215 +535,430 @@ export default function App() {
         }}>
           Web Specs
         </h1>
-        <button
-          style={{
-            marginBottom: '2rem',
-            padding: '0.7rem 2rem',
-            fontSize: '1.1rem',
-            fontWeight: 600,
-            borderRadius: '0.7rem',
-            border: 'none',
-            background: '#00e676',
-            color: '#181818',
-            boxShadow: '0 2px 8px #0008',
-            cursor: 'pointer',
-            transition: 'background 0.2s, color 0.2s',
-          }}
-          onClick={() => setRefreshKey(k => k + 1)}
-        >
-          Refresh Timeseries Graphs
-        </button>
-        {/* Bar charts for CPU, Memory, Swap, IO metrics */}
-        <div style={{ width: '100%', marginBottom: '2rem' }}>
-          <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>CPU Usage (%)</h2>
-            <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              width: '100%',
-            }}
+        {/* Overhead menu */}
+        <div style={{ display: 'flex', gap: '2rem', marginBottom: '2rem', justifyContent: 'center' }}>
+          {menuItems.map(item => (
+            <button
+              key={item.value}
+              style={{
+                padding: '0.7rem 2rem',
+                fontSize: '1.1rem',
+                fontWeight: 600,
+                borderRadius: '0.7rem',
+                border: selectedPage === item.value ? '2px solid #00e676' : 'none',
+                background: selectedPage === item.value ? '#00e676' : '#23272f',
+                color: selectedPage === item.value ? '#181818' : '#eee',
+                boxShadow: '0 2px 8px #0008',
+                cursor: 'pointer',
+                transition: 'background 0.2s, color 0.2s',
+              }}
+              onClick={() => setSelectedPage(item.value)}
             >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        {/* Pages */}
+        {selectedPage === 'realtime' && (
+          <Page>
             <div style={{
               display: 'flex',
-              justifyContent: 'center',
+              flexDirection: 'column',
               alignItems: 'center',
+              gap: '2.5rem',
               width: '100%',
+              maxWidth: '1100px',
+              margin: '0 auto',
             }}>
-              <BarChartSingleMetric
-              title=""
+              {metrics && (
+                <>
+                  {metrics.cpu && <MetricsGroup metric={unitMappings} group="cpu" title="CPU" data={metrics.cpu} history={history} />}
+                  {metrics.memory && <MetricsGroup metric={unitMappings} group="memory" title="Memory" data={metrics.memory} history={history} />}
+                  {metrics.swap_memory && <MetricsGroup metric={unitMappings} group="swap_memory" title="Swap Memory" data={metrics.swap_memory} history={history} />}
+                  {metrics.disk_usage && <MetricsGroup metric={unitMappings} group="disk_usage" title="Disk Usage" data={metrics.disk_usage} history={history} />}
+                  {metrics.io && <MetricsGroup metric={unitMappings} group="io" title="IO" data={metrics.io} history={history} />}
+                  {metrics.ping !== undefined && <MetricsGroup metric={unitMappings} group="ping" title="ping" data={{ ping: metrics.ping }} history={history} />}
+                  {metrics.gpu && <MetricsGroup metric={unitMappings} group="gpu" title="gpu" data={metrics.gpu} history={history} />}
+                </>
+              )}
+            </div>
+          </Page>
+        )}
+        {selectedPage === 'timeseries' && (
+          <Page>
+            <button
+              style={{
+                marginBottom: '2rem',
+                padding: '0.7rem 2rem',
+                fontSize: '1.1rem',
+                fontWeight: 600,
+                borderRadius: '0.7rem',
+                border: 'none',
+                background: '#00e676',
+                color: '#181818',
+                boxShadow: '0 2px 8px #0008',
+                cursor: 'pointer',
+                transition: 'background 0.2s, color 0.2s',
+              }}
+              onClick={() => setRefreshKey(k => k + 1)}
+            >
+              Refresh Timeseries Graphs
+            </button>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '3rem',
+                width: '100%',
+                justifyItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto',
+              }}
+            >
+              <TimeseriesGraph
+                title="Memory Usage (%)"
+                endpoint="http://127.0.0.1:8000/memory/percent/timeseries"
+                valueKey="value"
+                periodKey="period"
+                yLabel="Percent (%)"
+                refreshKey={refreshKey}
+              />
+              <TimeseriesGraph
+                title="Swap Memory Usage (%)"
+                endpoint="http://127.0.0.1:8000/swap_memory/percent/timeseries"
+                valueKey="value"
+                periodKey="period"
+                yLabel="Percent (%)"
+                refreshKey={refreshKey}
+              />
+              <TimeseriesGraph
+                title="CPU Usage (%)"
+                endpoint="http://127.0.0.1:8000/cpu/percent/timeseries"
+                valueKey="value"
+                periodKey="period"
+                deviceKey="core_id"
+                yLabel="Percent (%)"
+                multiDevice={true}
+                refreshKey={refreshKey}
+              />
+              <TimeseriesGraph
+                title="IO Read Bytes"
+                endpoint="http://127.0.0.1:8000/io/read/bytes/timeseries"
+                valueKey="value"
+                periodKey="period"
+                deviceKey="device_name"
+                yLabel="Bytes"
+                multiDevice={true}
+                refreshKey={refreshKey}
+              />
+              <TimeseriesGraph
+                title="IO Write Bytes"
+                endpoint="http://127.0.0.1:8000/io/write/bytes/timeseries"
+                valueKey="value"
+                periodKey="period"
+                deviceKey="device_name"
+                yLabel="Bytes"
+                multiDevice={true}
+                refreshKey={refreshKey}
+              />
+              <TimeseriesGraph
+                title="IO Read Time"
+                endpoint="http://127.0.0.1:8000/io/read/time/timeseries"
+                valueKey="value"
+                periodKey="period"
+                deviceKey="device_name"
+                yLabel="Ms"
+                multiDevice={true}
+                refreshKey={refreshKey}
+              />
+              <TimeseriesGraph
+                title="IO Write Time"
+                endpoint="http://127.0.0.1:8000/io/write/time/timeseries"
+                valueKey="value"
+                periodKey="period"
+                deviceKey="device_name"
+                yLabel="Ms"
+                multiDevice={true}
+                refreshKey={refreshKey}
+              />
+            </div>
+          </Page>
+        )}
+        {selectedPage === 'barcharts' && (
+          <Page>
+            <button
+              style={{
+                marginBottom: '2rem',
+                padding: '0.7rem 2rem',
+                fontSize: '1.1rem',
+                fontWeight: 600,
+                borderRadius: '0.7rem',
+                border: 'none',
+                background: '#00e676',
+                color: '#181818',
+                boxShadow: '0 2px 8px #0008',
+                cursor: 'pointer',
+                transition: 'background 0.2s, color 0.2s',
+              }}
+              onClick={() => setBarRefreshKey(k => k + 1)}
+            >
+              Refresh Bar Charts
+            </button>
+            <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>CPU Usage (%)</h2>
+            <BarChartSingleMetric
+              title="CPU Usage (%)"
               endpoint="http://127.0.0.1:8000/cpu/percent"
               valueKey="cpu_percent"
               color="#00e676"
+              refreshKey={barRefreshKey}
+            />
+            <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>Memory</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '15rem', justifyItems: 'center', alignItems: 'center', margin: '0 auto' }}>
+              <BarChartSingleMetric
+                title="Memory Usage (%)"
+                endpoint="http://127.0.0.1:8000/memory/percent"
+                valueKey="memory_percent"
+                color="#29b6f6"
+                refreshKey={barRefreshKey}
+              />
+              <BarChartSingleMetric
+                title="Swap Memory Usage (%)"
+                endpoint="http://127.0.0.1:8000/swap_memory/percent"
+                valueKey="memory_percent"
+                color="#ab47bc"
+                refreshKey={barRefreshKey}
               />
             </div>
+            <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>IO Bytes</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '15rem', justifyItems: 'center', alignItems: 'center', margin: '0 auto' }}>
+              <BarChartSingleMetric
+                title="IO Read Bytes"
+                endpoint="http://127.0.0.1:8000/io/read/bytes"
+                valueKey="io_read_bytes"
+                color="#29b6f6"
+                refreshKey={barRefreshKey}
+              />
+              <BarChartSingleMetric
+                title="IO Write Bytes"
+                endpoint="http://127.0.0.1:8000/io/write/bytes"
+                valueKey="io_write_bytes"
+                color="#ef5350"
+                refreshKey={barRefreshKey}
+              />
             </div>
-        </div>
-        <div style={{ width: '100%', marginBottom: '2rem' }}>
-          <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>Memory</h2>
-          <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
-              gap: '15rem', // smaller gap
-              justifyItems: 'center', // center items horizontally
-              alignItems: 'center',    // center items vertically
-              margin: '0 auto',        // center grid in parent
-            }}>
-            <BarChartSingleMetric
-              title="Memory Usage (%)"
-              endpoint="http://127.0.0.1:8000/memory/percent"
-              valueKey="memory_percent"
-              color="#29b6f6"
-            />
-            <BarChartSingleMetric
-              title="Swap Memory Usage (%)"
-              endpoint="http://127.0.0.1:8000/swap_memory/percent"
-              valueKey="memory_percent"
-              color="#ab47bc"
-            />
-          </div>
-        </div>
-        {/* Bar charts for IO metrics */}
-        <div style={{ width: '100%', marginBottom: '2rem' }}>
-          <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>IO Bytes</h2>
-          <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
-              gap: '15rem', // smaller gap
-              justifyItems: 'center', // center items horizontally
-              alignItems: 'center',    // center items vertically
-              margin: '0 auto',        // center grid in parent
-            }}>
-            <BarChartSingleMetric
-              title="IO Read Bytes"
-              endpoint="http://127.0.0.1:8000/io/read/bytes"
-              valueKey="io_read_bytes"
-              color="#29b6f6"
-            />
-            <BarChartSingleMetric
-              title="IO Write Bytes"
-              endpoint="http://127.0.0.1:8000/io/write/bytes"
-              valueKey="io_write_bytes"
-              color="#ef5350"
-            />
-          </div>
-        </div>
-        <div style={{ width: '100%', marginBottom: '2rem' }}>
-          <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>IO Time</h2>
-          <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
-              gap: '15rem', // smaller gap
-              justifyItems: 'center', // center items horizontally
-              alignItems: 'center',    // center items vertically
-              margin: '0 auto',        // center grid in parent
-            }}>
-            <BarChartSingleMetric
-              title="IO Read Time"
-              endpoint="http://127.0.0.1:8000/io/read/time"
-              valueKey="io_read_time"
-              color="#ab47bc"
-            />
-            <BarChartSingleMetric
-              title="IO Write Time"
-              endpoint="http://127.0.0.1:8000/io/write/time"
-              valueKey="io_write_time"
-              color="#ffb300"
-            />
-          </div>
-        </div>
-        {/* Timeseries graphs */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
-            gap: '20rem',
-            width: '100%',
-            justifyItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto',
-          }}
-        >
-          <TimeseriesGraph
-            title="Memory Usage (%)"
-            endpoint="http://127.0.0.1:8000/memory/percent/timeseries"
-            valueKey="value"
-            periodKey="period"
-            yLabel="Percent (%)"
-            refreshKey={refreshKey}
-          />
-          <TimeseriesGraph
-            title="Swap Memory Usage (%)"
-            endpoint="http://127.0.0.1:8000/swap_memory/percent/timeseries"
-            valueKey="value"
-            periodKey="period"
-            yLabel="Percent (%)"
-            refreshKey={refreshKey}
-          />
-          <TimeseriesGraph
-            title="CPU Usage (%)"
-            endpoint="http://127.0.0.1:8000/cpu/percent/timeseries"
-            valueKey="value"
-            periodKey="period"
-            deviceKey="core_id"
-            yLabel="Percent (%)"
-            multiDevice={true}
-            refreshKey={refreshKey}
-          />
-          <TimeseriesGraph
-            title="IO Read Bytes"
-            endpoint="http://127.0.0.1:8000/io/read/bytes/timeseries"
-            valueKey="value"
-            periodKey="period"
-            deviceKey="device_name"
-            yLabel="Bytes"
-            multiDevice={true}
-            refreshKey={refreshKey}
-          />
-          <TimeseriesGraph
-            title="IO Write Bytes"
-            endpoint="http://127.0.0.1:8000/io/write/bytes/timeseries"
-            valueKey="value"
-            periodKey="period"
-            deviceKey="device_name"
-            yLabel="Bytes"
-            multiDevice={true}
-            refreshKey={refreshKey}
-          />
-          <TimeseriesGraph
-            title="IO Read Time"
-            endpoint="http://127.0.0.1:8000/io/read/time/timeseries"
-            valueKey="value"
-            periodKey="period"
-            deviceKey="device_name"
-            yLabel="Ms"
-            multiDevice={true}
-            refreshKey={refreshKey}
-          />
-          <TimeseriesGraph
-            title="IO Write Time"
-            endpoint="http://127.0.0.1:8000/io/write/time/timeseries"
-            valueKey="value"
-            periodKey="period"
-            deviceKey="device_name"
-            yLabel="Ms"
-            multiDevice={true}
-            refreshKey={refreshKey}
-          />
-        </div>
-        {/* Live metrics groups */}
-        {metrics && (
-          <>
-            {metrics.cpu && <MetricsGroup metric={unitMappings} group="cpu" title="CPU" data={metrics.cpu} history={history} />}
-            {metrics.memory && <MetricsGroup metric={unitMappings} group="memory" title="Memory" data={metrics.memory} history={history} />}
-            {metrics.swap_memory && <MetricsGroup metric={unitMappings} group="swap_memory" title="Swap Memory" data={metrics.swap_memory} history={history} />}
-            {metrics.disk_usage && <MetricsGroup metric={unitMappings} group="disk_usage" title="Disk Usage" data={metrics.disk_usage} history={history} />}
-            {metrics.io && <MetricsGroup metric={unitMappings} group="io" title="IO" data={metrics.io} history={history} />}
-            {metrics.ping !== undefined && <MetricsGroup metric={unitMappings} group="ping" title="ping" data={{ ping: metrics.ping }} history={history} />}
-            {metrics.gpu && <MetricsGroup metric={unitMappings} group="gpu" title="gpu" data={metrics.gpu} history={history} />}
-          </>
+            <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>IO Time</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '15rem', justifyItems: 'center', alignItems: 'center', margin: '0 auto' }}>
+              <BarChartSingleMetric
+                title="IO Read Time"
+                endpoint="http://127.0.0.1:8000/io/read/time"
+                valueKey="io_read_time"
+                color="#ab47bc"
+                refreshKey={barRefreshKey}
+              />
+              <BarChartSingleMetric
+                title="IO Write Time"
+                endpoint="http://127.0.0.1:8000/io/write/time"
+                valueKey="io_write_time"
+                color="#ffb300"
+                refreshKey={barRefreshKey}
+              />
+            </div>
+          </Page>
+        )}
+        {selectedPage === 'distributions' && (
+          <DistributionPage />
         )}
       </div>
     </div>
+  );
+}
+
+function DensityPlot({ title, data, color }: {
+  title: string,
+  data: number[],
+  color?: string,
+}) {
+  return (
+    <div style={{
+      background: '#23272f',
+      border: '1px solid #333',
+      borderRadius: '1rem',
+      padding: '2rem 1.5rem 1.5rem 1.5rem',
+      marginBottom: '2rem',
+      color: '#eee',
+      boxShadow: '0 4px 24px #000a',
+      maxWidth: 900,
+      width: '100%',
+      minWidth: 0,
+      boxSizing: 'border-box',
+      overflow: 'hidden',
+      wordBreak: 'break-word',
+      transition: 'box-shadow 0.2s',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+    }}>
+      <div style={{ fontWeight: 700, fontSize: '1.3rem', marginBottom: '1rem', color, letterSpacing: '0.02em', textShadow: '0 2px 8px #0008', textAlign: 'center', width: '100%' }}>{title}</div>
+      <Plot
+        data={[{
+          x: data,
+          type: 'histogram',
+          histnorm: 'probability density',
+          marker: { color },
+          opacity: 0.7,
+          name: title,
+        }]}
+        layout={{
+          paper_bgcolor: '#23272f',
+          plot_bgcolor: '#23272f',
+          font: { color: '#eee' },
+          width: undefined,
+          height: 320,
+          margin: { t: 30, r: 10, l: 40, b: 80 },
+          xaxis: {
+            title: title,
+            color: '#aaa',
+            automargin: true,
+          },
+          yaxis: {
+            title: 'Density',
+            color: '#aaa',
+            showgrid: true,
+            gridcolor: '#333',
+            zeroline: false,
+          },
+        }}
+        config={{ displayModeBar: false, responsive: true }}
+        style={{ width: '100%', height: '100%' }}
+      />
+    </div>
+  );
+}
+
+function CPUDistributionPlots({ time, refreshKey }: { time: string, refreshKey?: number }) {
+  const [data, setData] = useState<any>({});
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`http://127.0.0.1:8000/cpu/percent/distribution?time=${time}`)
+      .then(res => res.json())
+      .then(json => {
+        setData(json['cpu_percent_distribution'] || {});
+        setLoading(false);
+      });
+  }, [time, refreshKey]);
+
+  const colors = [
+    '#00e676', '#29b6f6', '#ab47bc', '#ef5350', '#ffb300', '#8d6e63', '#26a69a', '#d4e157', '#5c6bc0', '#ec407a', '#789262', '#ffa726', '#7e57c2', '#66bb6a', '#ff7043', '#26c6da', '#c62828', '#ad1457', '#6d4c41', '#0097a7'
+  ];
+  const coreKeys = Object.keys(data);
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '2rem' }}>
+      {loading ? <div>Loading...</div> :
+        coreKeys.map((core, idx) => (
+          <DensityPlot
+            key={core}
+            title={`CPU Core ${core} Usage (%)`}
+            data={data[core]}
+            color={colors[idx % colors.length]}
+          />
+        ))
+      }
+    </div>
+  );
+}
+
+function DistributionPage() {
+  const [time, setTime] = useState('hour');
+  const [memoryData, setMemoryData] = useState<number[]>([]);
+  const [swapData, setSwapData] = useState<number[]>([]);
+  const [ioReadData, setIOReadData] = useState<any>({});
+  const [ioWriteData, setIOWriteData] = useState<any>({});
+  const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      fetch(`http://127.0.0.1:8000/memory/percent/distribution?time=${time}`).then(res => res.json()),
+      fetch(`http://127.0.0.1:8000/swap_memory/percent/distribution?time=${time}`).then(res => res.json()),
+      fetch(`http://127.0.0.1:8000/io/read/bytes/distribution?time=${time}`).then(res => res.json()),
+      fetch(`http://127.0.0.1:8000/io/write/bytes/distribution?time=${time}`).then(res => res.json()),
+    ]).then(([mem, swap, ioRead, ioWrite]) => {
+      setMemoryData(mem.memory_percent_distribution || []);
+      setSwapData(swap.swap_memory_percent_distribution || []);
+      setIOReadData(ioRead.io_read_bytes_distribution || {});
+      setIOWriteData(ioWrite.io_write_bytes_distribution || {});
+      setLoading(false);
+    });
+  }, [time, refreshKey]);
+
+  return (
+    <Page>
+      <button
+        style={{
+          marginBottom: '2rem',
+          padding: '0.7rem 2rem',
+          fontSize: '1.1rem',
+          fontWeight: 600,
+          borderRadius: '0.7rem',
+          border: 'none',
+          background: '#00e676',
+          color: '#181818',
+          boxShadow: '0 2px 8px #0008',
+          cursor: 'pointer',
+          transition: 'background 0.2s, color 0.2s',
+        }}
+        onClick={() => setRefreshKey(k => k + 1)}
+      >
+        Refresh Distributions
+      </button>
+      <div style={{ display: 'flex', gap: '2rem', marginBottom: '1.2rem', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+        <div>
+          <span style={{ marginRight: '0.5rem', fontWeight: 500 }}>Time:</span>
+          <span style={segmentedControlStyle}>
+            {['hour', 'day', 'month', 'year', 'overall'].map(opt => (
+              <button
+                key={opt}
+                style={segmentedButtonStyle(time === opt)}
+                onClick={() => setTime(opt)}
+                type="button"
+              >
+                {opt.charAt(0).toUpperCase() + opt.slice(1)}
+              </button>
+            ))}
+          </span>
+        </div>
+      </div>
+      {loading ? <div>Loading...</div> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '3rem', width: '100%', maxWidth: '1400px', margin: '0 auto' }}>
+          <div>
+            <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>Memory</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '2rem' }}>
+              <DensityPlot title="Memory Usage (%)" data={memoryData} color="#29b6f6" />
+              <DensityPlot title="Swap Memory Usage (%)" data={swapData} color="#ab47bc" />
+            </div>
+          </div>
+          <div>
+            {/*<h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>CPU</h2>*/}
+            {/*<CPUDistributionPlots time={time} refreshKey={refreshKey} />*/}
+          </div>
+          <div>
+            <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>IO</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '2rem' }}>
+              {Object.entries(ioReadData).map(([dev, arr], idx) => (
+                <DensityPlot key={dev} title={`IO Read Bytes (${dev})`} data={arr} color="#29b6f6" />
+              ))}
+              {Object.entries(ioWriteData).map(([dev, arr], idx) => (
+                <DensityPlot key={dev} title={`IO Write Bytes (${dev})`} data={arr} color="#ef5350" />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </Page>
   );
 }

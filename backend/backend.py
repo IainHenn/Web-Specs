@@ -40,7 +40,6 @@ def get_db_connection():
         print(f"Error connecting to the database: {e}")
         return None
 
-
 def get_gpu_stats():
     gpu_info = {}
     try:
@@ -68,7 +67,6 @@ def get_gpu_stats():
     except Exception as e:
         gpu_info['error'] = str(e)
     return gpu_info
-
 
 def get_ping():
     try:
@@ -210,6 +208,125 @@ PLANS:
 '''
 
 #Rest-like Routes
+@app.get("/memory/percent/distribution")
+def memory_percent_dist(time: str = 'hour'):
+    try:
+        # Map time param to interval
+        intervals = {
+            'hour': "WHERE timestamp >= NOW() - INTERVAL '1 hour'",
+            'day': "WHERE timestamp >= NOW() - INTERVAL '1 day'",
+            'month': "WHERE timestamp >= NOW() - INTERVAL '1 month'",
+            'year': "WHERE timestamp >= NOW() - INTERVAL '1 year'",
+            'overall': ""
+        }
+        if time not in intervals:
+            return jsonify({"error": "Invalid time parameter. Use 'hour', 'day', 'month', 'year', or 'overall'."}), 400
+
+        time_query = intervals[time]
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(f"SELECT memory_percent_usage FROM memory_metrics {time_query}")
+            data = cursor.fetchall()
+            values = [float(row[0]) for row in data]
+            return jsonify({"memory_percent_distribution": values})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/swap_memory/percent/distribution")
+def swap_memory_percent_dist(time: str = 'hour'):
+    try:
+        intervals = {
+            'hour': "WHERE timestamp >= NOW() - INTERVAL '1 hour'",
+            'day': "WHERE timestamp >= NOW() - INTERVAL '1 day'",
+            'month': "WHERE timestamp >= NOW() - INTERVAL '1 month'",
+            'year': "WHERE timestamp >= NOW() - INTERVAL '1 year'",
+            'overall': ""
+        }
+        if time not in intervals:
+            return jsonify({"error": "Invalid time parameter. Use 'hour', 'day', 'month', 'year', or 'overall'."}), 400
+
+        time_query = intervals[time]
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(f"SELECT percent_usage FROM swap_memory_metrics {time_query}")
+            data = cursor.fetchall()
+            values = [float(row[0]) for row in data]
+            return jsonify({"swap_memory_percent_distribution": values})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/cpu/percent/distribution")
+def cpu_percent_dist(time: str = 'hour'):
+    try:
+        intervals = {
+            'hour': "WHERE timestamp >= NOW() - INTERVAL '1 hour'",
+            'day': "WHERE timestamp >= NOW() - INTERVAL '1 day'",
+            'month': "WHERE timestamp >= NOW() - INTERVAL '1 month'",
+            'year': "WHERE timestamp >= NOW() - INTERVAL '1 year'",
+            'overall': ""
+        }
+        if time not in intervals:
+            return jsonify({"error": "Invalid time parameter. Use 'hour', 'day', 'month', 'year', or 'overall'."}), 400
+
+        time_query = intervals[time]
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(f"SELECT AVG(percent_usage) FROM cpu_metrics {time_query} GROUP BY timestamp")
+            data = cursor.fetchall()
+            return jsonify({"cpu_percent_distribution": [float(row[0]) for row in data]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/io/read/bytes/distribution")
+def io_read_bytes_dist(time: str = 'hour'):
+    try:
+        intervals = {
+            'hour': "WHERE timestamp >= NOW() - INTERVAL '1 hour'",
+            'day': "WHERE timestamp >= NOW() - INTERVAL '1 day'",
+            'month': "WHERE timestamp >= NOW() - INTERVAL '1 month'",
+            'year': "WHERE timestamp >= NOW() - INTERVAL '1 year'",
+            'overall': ""
+        }
+        if time not in intervals:
+            return jsonify({"error": "Invalid time parameter. Use 'hour', 'day', 'month', 'year', or 'overall'."}), 400
+
+        time_query = intervals[time]
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(f"SELECT device_name, read_bytes FROM disk_io_metrics {time_query}")
+            data = cursor.fetchall()
+            dist = {}
+            for device, value in data:
+                dist.setdefault(device, []).append(float(value))
+            return jsonify({"io_read_bytes_distribution": dist})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/io/write/bytes/distribution")
+def io_write_bytes_dist(time: str = 'hour'):
+    try:
+        intervals = {
+            'hour': "WHERE timestamp >= NOW() - INTERVAL '1 hour'",
+            'day': "WHERE timestamp >= NOW() - INTERVAL '1 day'",
+            'month': "WHERE timestamp >= NOW() - INTERVAL '1 month'",
+            'year': "WHERE timestamp >= NOW() - INTERVAL '1 year'",
+            'overall': ""
+        }
+        if time not in intervals:
+            return jsonify({"error": "Invalid time parameter. Use 'hour', 'day', 'month', 'year', or 'overall'."}), 400
+
+        time_query = intervals[time]
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(f"SELECT device_name, write_bytes FROM disk_io_metrics {time_query}")
+            data = cursor.fetchall()
+            dist = {}
+            for device, value in data:
+                dist.setdefault(device, []).append(float(value))
+            return jsonify({"io_write_bytes_distribution": dist})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.get("/io/read/bytes")
 def io_read_bytes(type: str='avg', time: str = 'overall'):
     try:
