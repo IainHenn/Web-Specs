@@ -148,6 +148,7 @@ function TimeseriesGraph({
   periodKey,
   yLabel,
   multiDevice = false,
+  refreshKey,
 }: {
   title: string,
   endpoint: string,
@@ -156,9 +157,10 @@ function TimeseriesGraph({
   periodKey?: string,
   yLabel: string,
   multiDevice?: boolean,
+  refreshKey?: number,
 }) {
-  const [groupby, setGroupby] = useState('hour');
-  const [type, setType] = useState('avg');
+  const [groupby, setGroupby] = useState('minute'); // default to minute
+  const [type, setType] = useState('avg'); // default to avg
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -179,7 +181,7 @@ function TimeseriesGraph({
       setData(json[key] || []);
       setLoading(false);
     });
-  }, [endpoint, groupby, type]);
+  }, [endpoint, groupby, type, refreshKey]);
 
   // Prepare traces for Plotly
   let traces: any[] = [];
@@ -286,10 +288,136 @@ function TimeseriesGraph({
   );
 }
 
+function BarChartSingleMetric({
+  title,
+  endpoint,
+  valueKey,
+  labelKey,
+  color = '#00e676',
+}: {
+  title: string,
+  endpoint: string,
+  valueKey: string,
+  labelKey?: string,
+  color?: string,
+}) {
+  const [type, setType] = useState('avg');
+  const [time, setTime] = useState('hourly');
+  const [data, setData] = useState<any>({});
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${endpoint}?type=${type}&time=${time}`)
+      .then(res => res.json())
+      .then(json => {
+        setData(json[valueKey] || {});
+        setLoading(false);
+      });
+  }, [endpoint, type, time, valueKey]);
+
+  // Prepare bar chart data
+  const labels = Object.keys(data);
+  const values = Object.values(data);
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, #23272f 60%, #181818 100%)',
+      border: '1px solid #222',
+      borderRadius: '1.2rem',
+      padding: '2rem 1.5rem 1.5rem 1.5rem',
+      marginBottom: '2rem',
+      color: '#eee',
+      boxShadow: '0 4px 24px #000a',
+      maxWidth: 900,
+      width: '130%',
+      minWidth: 0,
+      boxSizing: 'border-box',
+      overflow: 'hidden',
+      wordBreak: 'break-word',
+      transition: 'box-shadow 0.2s',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+    }}>
+      <div style={{ fontWeight: 700, fontSize: '1.3rem', marginBottom: '1rem', color, letterSpacing: '0.02em', textShadow: '0 2px 8px #0008', textAlign: 'center', width: '100%' }}>{title}</div>
+      <div style={{ display: 'flex', gap: '2rem', marginBottom: '1.2rem', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+        <div>
+          <span style={{ marginRight: '0.5rem', fontWeight: 500 }}>Time:</span>
+          <span style={segmentedControlStyle}>
+            {['hourly', 'daily', 'monthly', 'yearly'].map(opt => (
+              <button
+                key={opt}
+                style={segmentedButtonStyle(time === opt)}
+                onClick={() => setTime(opt)}
+                type="button"
+              >
+                {opt.charAt(0).toUpperCase() + opt.slice(1)}
+              </button>
+            ))}
+          </span>
+        </div>
+        <div>
+          <span style={{ marginRight: '0.5rem', fontWeight: 500 }}>Type:</span>
+          <span style={segmentedControlStyle}>
+            {typeOptions.map(opt => (
+              <button
+                key={opt.value}
+                style={segmentedButtonStyle(type === opt.value)}
+                onClick={() => setType(opt.value)}
+                type="button"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </span>
+        </div>
+      </div>
+      {loading ? <div>Loading...</div> :
+        <div style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <Plot
+            data={[{
+              x: labels,
+              y: values,
+              type: 'bar',
+              marker: { color },
+            }]}
+            layout={{
+              paper_bgcolor: '#181818',
+              plot_bgcolor: '#181818',
+              font: { color: '#eee' },
+              width: undefined,
+              height: 320,
+              margin: { t: 30, r: 10, l: 40, b: 80 },
+              xaxis: {
+                title: 'Device',
+                color: '#aaa',
+                tickangle: -30,
+                automargin: true,
+              },
+              yaxis: {
+                title: title,
+                color: '#aaa',
+                showgrid: true,
+                gridcolor: '#333',
+                zeroline: false,
+              },
+            }}
+            config={{ displayModeBar: false, responsive: true }}
+            style={{ width: '100%', height: '100%' }}
+          />
+        </div>
+      }
+    </div>
+  );
+}
+
 export default function App() {
   const [metrics, setMetrics] = useState<any>(null);
   const [history, setHistory] = useState<Record<string, number[]>>({});
   const historyRef = useRef<Record<string, number[]>>({});
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const unitMappings: Record<string, string> = {
     // CPU
@@ -363,15 +491,15 @@ export default function App() {
         borderRadius: '2rem',
       }}
     >
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            maxWidth: '1400px',
-            width: 'auto',
-          }}
-        >
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          maxWidth: '1400px',
+          width: 'auto',
+        }}
+      >
         <h1 style={{
           textAlign: 'center',
           fontWeight: 700,
@@ -383,6 +511,123 @@ export default function App() {
         }}>
           Web Specs
         </h1>
+        <button
+          style={{
+            marginBottom: '2rem',
+            padding: '0.7rem 2rem',
+            fontSize: '1.1rem',
+            fontWeight: 600,
+            borderRadius: '0.7rem',
+            border: 'none',
+            background: '#00e676',
+            color: '#181818',
+            boxShadow: '0 2px 8px #0008',
+            cursor: 'pointer',
+            transition: 'background 0.2s, color 0.2s',
+          }}
+          onClick={() => setRefreshKey(k => k + 1)}
+        >
+          Refresh Timeseries Graphs
+        </button>
+        {/* Bar charts for CPU, Memory, Swap, IO metrics */}
+        <div style={{ width: '100%', marginBottom: '2rem' }}>
+          <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>CPU Usage (%)</h2>
+            <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: '100%',
+            }}
+            >
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: '100%',
+            }}>
+              <BarChartSingleMetric
+              title=""
+              endpoint="http://127.0.0.1:8000/cpu/percent"
+              valueKey="cpu_percent"
+              color="#00e676"
+              />
+            </div>
+            </div>
+        </div>
+        <div style={{ width: '100%', marginBottom: '2rem' }}>
+          <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>Memory</h2>
+          <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: '15rem', // smaller gap
+              justifyItems: 'center', // center items horizontally
+              alignItems: 'center',    // center items vertically
+              margin: '0 auto',        // center grid in parent
+            }}>
+            <BarChartSingleMetric
+              title="Memory Usage (%)"
+              endpoint="http://127.0.0.1:8000/memory/percent"
+              valueKey="memory_percent"
+              color="#29b6f6"
+            />
+            <BarChartSingleMetric
+              title="Swap Memory Usage (%)"
+              endpoint="http://127.0.0.1:8000/swap_memory/percent"
+              valueKey="memory_percent"
+              color="#ab47bc"
+            />
+          </div>
+        </div>
+        {/* Bar charts for IO metrics */}
+        <div style={{ width: '100%', marginBottom: '2rem' }}>
+          <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>IO Bytes</h2>
+          <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: '15rem', // smaller gap
+              justifyItems: 'center', // center items horizontally
+              alignItems: 'center',    // center items vertically
+              margin: '0 auto',        // center grid in parent
+            }}>
+            <BarChartSingleMetric
+              title="IO Read Bytes"
+              endpoint="http://127.0.0.1:8000/io/read/bytes"
+              valueKey="io_read_bytes"
+              color="#29b6f6"
+            />
+            <BarChartSingleMetric
+              title="IO Write Bytes"
+              endpoint="http://127.0.0.1:8000/io/write/bytes"
+              valueKey="io_write_bytes"
+              color="#ef5350"
+            />
+          </div>
+        </div>
+        <div style={{ width: '100%', marginBottom: '2rem' }}>
+          <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>IO Time</h2>
+          <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: '15rem', // smaller gap
+              justifyItems: 'center', // center items horizontally
+              alignItems: 'center',    // center items vertically
+              margin: '0 auto',        // center grid in parent
+            }}>
+            <BarChartSingleMetric
+              title="IO Read Time"
+              endpoint="http://127.0.0.1:8000/io/read/time"
+              valueKey="io_read_time"
+              color="#ab47bc"
+            />
+            <BarChartSingleMetric
+              title="IO Write Time"
+              endpoint="http://127.0.0.1:8000/io/write/time"
+              valueKey="io_write_time"
+              color="#ffb300"
+            />
+          </div>
+        </div>
         {/* Timeseries graphs */}
         <div
           style={{
@@ -401,6 +646,7 @@ export default function App() {
             valueKey="value"
             periodKey="period"
             yLabel="Percent (%)"
+            refreshKey={refreshKey}
           />
           <TimeseriesGraph
             title="Swap Memory Usage (%)"
@@ -408,6 +654,7 @@ export default function App() {
             valueKey="value"
             periodKey="period"
             yLabel="Percent (%)"
+            refreshKey={refreshKey}
           />
           <TimeseriesGraph
             title="CPU Usage (%)"
@@ -417,6 +664,7 @@ export default function App() {
             deviceKey="core_id"
             yLabel="Percent (%)"
             multiDevice={true}
+            refreshKey={refreshKey}
           />
           <TimeseriesGraph
             title="IO Read Bytes"
@@ -426,6 +674,7 @@ export default function App() {
             deviceKey="device_name"
             yLabel="Bytes"
             multiDevice={true}
+            refreshKey={refreshKey}
           />
           <TimeseriesGraph
             title="IO Write Bytes"
@@ -435,6 +684,7 @@ export default function App() {
             deviceKey="device_name"
             yLabel="Bytes"
             multiDevice={true}
+            refreshKey={refreshKey}
           />
           <TimeseriesGraph
             title="IO Read Time"
@@ -444,6 +694,7 @@ export default function App() {
             deviceKey="device_name"
             yLabel="Ms"
             multiDevice={true}
+            refreshKey={refreshKey}
           />
           <TimeseriesGraph
             title="IO Write Time"
@@ -453,6 +704,7 @@ export default function App() {
             deviceKey="device_name"
             yLabel="Ms"
             multiDevice={true}
+            refreshKey={refreshKey}
           />
         </div>
         {/* Live metrics groups */}

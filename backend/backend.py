@@ -63,7 +63,7 @@ def get_gpu_stats():
                 'memory_utilization': utilization.memory
             })
         gpu_info['vendor'] = 'NVIDIA'
-        gpu_info['gpus'] = gpus
+        gpu_info['gpus'] = gpus 
         pynvml.nvmlShutdown()
     except Exception as e:
         gpu_info['error'] = str(e)
@@ -347,7 +347,7 @@ def memory_percent(type: str = 'avg', time: str = 'overall'):
             cursor.execute(f"SELECT {type.upper()}(memory_percent_usage) FROM memory_metrics {time_query}")
             data = cursor.fetchone()
             if data:
-                return jsonify({"memory_percent": round(float(data[0]),2)})
+                return jsonify({"memory_percent": {"Memory":round(float(data[0]),2)}})
             else:
                 return jsonify({"error": f"Unable to grab {type} data for memory"}), 500
     except Exception as e:
@@ -420,7 +420,7 @@ def swap_memory_percent(type: str = 'avg', time: str = 'overall'):
             cursor.execute(f"SELECT {type.upper()}(percent_usage) FROM swap_memory_metrics {time_query}")
             data = cursor.fetchone()
             if data:
-                return jsonify({"memory_percent": data[0]})
+                return jsonify({"memory_percent": {"Memory": data[0]}})
             else:
                 return jsonify({"error": f"Unable to grab {type} data for swap memory"}), 500
     except Exception as e:
