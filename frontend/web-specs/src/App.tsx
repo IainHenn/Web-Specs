@@ -499,6 +499,7 @@ export default function App() {
     { label: 'Past Data (Time Series)', value: 'timeseries' },
     { label: 'Past Data (Bar Charts)', value: 'barcharts' },
     { label: 'Past Data (Distributions)', value: 'distributions' },
+    { label: 'Static Info', value: 'staticinfo' },
   ];
 
   return (
@@ -768,8 +769,38 @@ export default function App() {
         {selectedPage === 'distributions' && (
           <DistributionPage />
         )}
+        {selectedPage === 'staticinfo' && (
+          <StaticInfoPage />
+        )}
       </div>
     </div>
+  );
+}
+
+function StaticInfoPage() {
+  const [info, setInfo] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('http://127.0.0.1:8000/system/static-info')
+      .then(res => res.json())
+      .then(json => {
+        const body = JSON.parse(json[0].body);
+        console.log(body['static-info']);
+        setInfo(body['static-info']);
+        setLoading(false);
+      });
+  }, []);
+
+  return (
+    <Page>
+      <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>Static System Info</h2>
+      {loading ? <div>Loading...</div> : (
+        <pre style={{ background: '#23272f', color: '#eee', padding: '2rem', borderRadius: '1rem', fontSize: '1.1rem', overflowX: 'auto' }}>
+          {JSON.stringify(info, null, 2)}
+        </pre>
+      )}
+    </Page>
   );
 }
 
@@ -949,10 +980,10 @@ function DistributionPage() {
           <div>
             <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 600 }}>IO</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '2rem' }}>
-              {Object.entries(ioReadData).map(([dev, arr], idx) => (
+              {Object.entries(ioReadData).map(([dev, arr]) => (
                 <DensityPlot key={dev} title={`IO Read Bytes (${dev})`} data={arr} color="#29b6f6" />
               ))}
-              {Object.entries(ioWriteData).map(([dev, arr], idx) => (
+              {Object.entries(ioWriteData).map(([dev, arr]) => (
                 <DensityPlot key={dev} title={`IO Write Bytes (${dev})`} data={arr} color="#ef5350" />
               ))}
             </div>
