@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import psutil
 import json
+from config import generate_notif_settings
 
 from ping3 import ping
 import ifcfg 
@@ -734,6 +735,8 @@ async def metric_ws(ws: WebSocket):
             system_info['io'] = get_disk_io_counters()
             
             log_data(system_info)
+
+            generate_notif_settings(system_info)
 
             await ws.send_text(json.dumps(system_info))
             await asyncio.sleep(3)
