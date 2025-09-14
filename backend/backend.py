@@ -1,10 +1,10 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import JSONResponse as jsonify
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import psutil
 import json
-from config import generate_notif_settings
+from config import generate_notif_settings, update_settings, setup_email_config
 
 from ping3 import ping
 import ifcfg 
@@ -44,12 +44,16 @@ app.add_middleware(
 '''
 PLANS:
 - overall/monthly/yearly/daily/hourly average/max/min CPU (per CPU) /memory/swap memory percent usage --> backend done
-- overall/monthly/yearly/daily/hourly average/max/min IO read/write --> backend routes done
+- overall/monthly/yearly/daily/hourly average/max/min IO read/write --> backend routes done -->  done
 - cpu/memory/swap memory distribution, read/write distribution --> done
-- violin plot for disk io latency --> backend route done
-- static info page (ip, system info, etc)
-- notif system 
-- config page + thresholds for notif
+- violin plot for disk io latency --> backend route done --> done
+- static info page (ip, system info, etc) --> done
+- notif system --> working on
+    - correct thresholds (percent vs absolute values)
+        - default to '' for absolute, 80% for percents
+    - add email subscriptions to frontend, with ability to set host email + app password
+    - carry out notif system with new alerts table
+    - config page + thresholds for notif --> done but needs touch ups
 - possible RAG based chatbot......?
 '''
 
@@ -697,6 +701,55 @@ def io_write_time_timeseries(type: str = 'avg', groupby: str = 'hour'):
                 return jsonify({"error": f"Unable to grab {type} timeseries data for IO"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.get("/notification-settings")
+def get_notif_settings():
+    config_path = os.path.join("notif_config.json")
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            return json.load(f)
+
+@app.patch("/notification-settings")
+async def update_notif_settings(request: Request):
+    data = await request.json()
+    changes = data.get("changes", {})
+    if changes:
+        update_settings(changes)
+
+@app.post("/emails/{email}")
+def add_email(email: str):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT email FROM email_subscriptions WHERE email = %s", (email,))
+            result = cursor.fetchone()
+            if result:
+                return jsonify({"success": False, "error": "Email already added to notification list."}), 409
+            else:
+                cursor.execute("INSERT INTO email_subscriptions (email) VALUES (%s)", (email,))
+                conn.commit()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.post("/emails/host")
+async def add_email(request: Request):
+    try:
+        data = await request.json()
+        host_email = data.get("email", None)
+        app_password = data.get("app_password", None)
+
+        if not host_email or not app_password:
+            return jsonify({"success": False, "error": "host email or app password not provided"}), 400
+
+        setup_email_config(host_email, app_password)
+        return jsonify({"success": True}), 200
+    
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 #Web Socket Routes
 @app.websocket("/ws/metrics")

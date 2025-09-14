@@ -22,6 +22,7 @@ def generate_notif_settings(system_info):
 
 def update_settings(changes):
     config_path = os.path.join("notif_config.json")
+    print(f"changes: {changes}")
     if os.path.exists(config_path):
         with open(config_path, "r") as f:
             config_dict = json.load(f)
@@ -37,3 +38,14 @@ def update_settings(changes):
                                 config_dict[key][nested_key] = changes[key][nested_key]
                 else:
                     config_dict[key] = changes[key]
+        with open(config_path, "w") as f:
+            json.dump(config_dict, f, indent=4)
+
+def setup_email_config(email, app_password):
+    email_config_path = os.path.join("email_config.json")
+    email_config = {
+        "sender_email": email,
+        "app_password": app_password,
+    }
+    with open(email_config_path, "w") as f:
+        json.dump(email_config, f, indent=4)
