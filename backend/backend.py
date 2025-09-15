@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import psutil
 import json
-from config import generate_notif_settings, update_settings, setup_email_config
+from config import generate_notif_settings, update_settings, setup_email_config, check_thresholds
 
 from ping3 import ping
 import ifcfg 
@@ -50,7 +50,7 @@ PLANS:
 - static info page (ip, system info, etc) --> done
 - notif system --> working on
     - correct thresholds (percent vs absolute values)
-        - default to '' for absolute, 80% for percents
+        - default to '' for absolute, 80% for percents --> done
     - add email subscriptions to frontend, with ability to set host email + app password
     - carry out notif system with new alerts table
     - config page + thresholds for notif --> done but needs touch ups
@@ -713,6 +713,7 @@ def get_notif_settings():
 async def update_notif_settings(request: Request):
     data = await request.json()
     changes = data.get("changes", {})
+    print(f"changes testing: {changes}")
     if changes:
         update_settings(changes)
 
@@ -731,24 +732,28 @@ def add_email(email: str):
         return jsonify({"success": True}), 200
     except Exception as e:
         conn.rollback()
+        print(e)
         return jsonify({"success": False, "error": str(e)}), 500
     finally:
         conn.close()
 
-@app.post("/emails/host")
-async def add_email(request: Request):
+@app.post("/host-email")
+async def add_host_email(request: Request):
     try:
         data = await request.json()
         host_email = data.get("email", None)
         app_password = data.get("app_password", None)
+        print("after")
 
         if not host_email or not app_password:
             return jsonify({"success": False, "error": "host email or app password not provided"}), 400
-
+        print(host_email)
+        print(app_password)
         setup_email_config(host_email, app_password)
         return jsonify({"success": True}), 200
     
     except Exception as e:
+        print(e)
         return jsonify({"success": False, "error": str(e)}), 500
 
 #Web Socket Routes
@@ -790,6 +795,8 @@ async def metric_ws(ws: WebSocket):
             log_data(system_info)
 
             generate_notif_settings(system_info)
+
+            check_thresholds(system_info)
 
             await ws.send_text(json.dumps(system_info))
             await asyncio.sleep(3)
