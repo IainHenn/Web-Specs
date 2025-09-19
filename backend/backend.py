@@ -15,6 +15,9 @@ import subprocess
 import psycopg2
 import os
 import datetime
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import smtplib
+from email.message import EmailMessage
 
 from live_info import (
     get_db_connection,
@@ -30,6 +33,7 @@ from live_info import (
 )
 
 from static_info import system_info
+from collections import defaultdict
 
 app = FastAPI()
 
@@ -41,6 +45,67 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+async def send_out_emails():
+    with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
+        config_path = os.path.join("email_config.json")
+        
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                email_config = json.load(f)
+        else:
+            return
+        
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT email FROM email_subscriptions")
+            data = cursor.fetchall()
+            emails = [row[0] for row in data]
+            msg = EmailMessage()
+            msg['Subject'] = f"Web Specs Log - Past Hour: {datetime.datetime.now()}"
+            msg['From'] = email_config['sender_email']
+            msg['To'] = ','.join(emails)
+
+            cursor.execute("""
+                UPDATE alerts
+                SET sent = TRUE
+                WHERE timestamp >= NOW() - INTERVAL '1 hour'
+            """)
+            conn.commit()
+
+            cursor.execute("""
+                SELECT component, timestamp, value, threshold_value
+                FROM alerts
+                WHERE timestamp >= NOW() - INTERVAL '1 hour'
+                ORDER BY timestamp DESC
+            """)
+            alerts = cursor.fetchall()
+            if alerts:
+
+                grouped = defaultdict(list)
+                for row in alerts:
+                    component, timestamp, value, threshold = row
+                    grouped[component].append(
+                        f"[{timestamp.strftime('%Y-%m-%d %H:%M:%S')}] Value={value}, Threshold={threshold}"
+                    )
+                # Build message content
+                alert_lines = []
+                for component, entries in grouped.items():
+                    alert_lines.append(f"{component}:")
+                    alert_lines.extend(entries)
+                    alert_lines.append("") 
+                msg.set_content('\n'.join(alert_lines))
+
+                smtp.starttls()
+                smtp.login(email_config['sender_email'], email_config['app_password'])
+                smtp.send_message(msg)
+            
+            else:
+                return
+
+scheduler = AsyncIOScheduler()
+scheduler.add_job(send_out_emails, 'interval', hours=1)
+scheduler.start()
+
 '''
 PLANS:
 - overall/monthly/yearly/daily/hourly average/max/min CPU (per CPU) /memory/swap memory percent usage --> backend done
@@ -51,7 +116,7 @@ PLANS:
 - notif system --> working on
     - correct thresholds (percent vs absolute values)
         - default to '' for absolute, 80% for percents --> done
-    - add email subscriptions to frontend, with ability to set host email + app password
+    - add email subscriptions to frontend, with ability to set host email + app password --> done
     - carry out notif system with new alerts table
     - config page + thresholds for notif --> done but needs touch ups
 - possible RAG based chatbot......?
