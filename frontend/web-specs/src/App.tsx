@@ -2,7 +2,141 @@ import { useState, useEffect, useRef } from 'react'
 import Plot from 'react-plotly.js'
 import './App.css'
 
-// Helper to flatten metrics object to key-paths and values
+function NotifIcon({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      style={{
+        position: 'absolute',
+        top: '2rem',
+        left: '2rem',
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        zIndex: 1000,
+      }}
+      onClick={onClick}
+      title="Notification Settings"
+    >
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="15" stroke="#00e676" strokeWidth="2" fill="#23272f" />
+        <path d="M10 12v6c0 2.2 1.8 4 4 4s4-1.8 4-4v-6" stroke="#00e676" strokeWidth="2" fill="none" />
+        <circle cx="16" cy="22" r="2" fill="#00e676" />
+      </svg>
+    </button>
+  );
+}
+
+function NotifSettingsModal({ open, onClose }: { open: boolean, onClose: () => void }) {
+  const [settings, setSettings] = useState<any>(null);
+  const [edited, setEdited] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setLoading(true);
+      fetch('http://127.0.0.1:8000/notification-settings')
+        .then(res => res.json())
+        .then(json => {
+          setSettings(json);
+          setEdited(JSON.parse(JSON.stringify(json)));
+          setLoading(false);
+        });
+    }
+  }, [open]);
+
+  function handleChange(path: string[], value: any) {
+    const newEdited = JSON.parse(JSON.stringify(edited));
+    let obj = newEdited;
+    for (let i = 0; i < path.length - 1; i++) {
+      obj = obj[path[i]];
+    }
+    obj[path[path.length - 1]] = value;
+    setEdited(newEdited);
+  }
+
+  function renderFields(obj: any, path: string[] = []) {
+    return Object.entries(obj).map(([key, value]) => {
+      const fullPath = [...path, key];
+      if (typeof value === 'object' && value !== null) {
+        return (
+          <div key={fullPath.join('.')} style={{ marginBottom: '1rem', marginLeft: path.length * 16 }}>
+            <div style={{ fontWeight: 600, color: '#00e676', marginBottom: '0.5rem' }}>{key}</div>
+            {renderFields(value, fullPath)}
+          </div>
+        );
+      } else if (typeof value === 'number' || value === "") {
+        // Get value from edited using fullPath
+        let editedValue = edited;
+        for (let i = 0; i < fullPath.length; i++) {
+          if (editedValue && editedValue[fullPath[i]] !== undefined) {
+            editedValue = editedValue[fullPath[i]];
+          } else {
+            editedValue = undefined;
+            break;
+          }
+        }
+        return (
+          <div key={fullPath.join('.')} style={{ marginBottom: '1rem', marginLeft: path.length * 16 }}>
+            <label style={{ color: '#eee', marginRight: '1rem' }}>{key}:</label>
+            <input
+              type="number"
+              step="0.01"
+              value={editedValue !== undefined && editedValue !== "" ? editedValue : ""}
+              onChange={e => handleChange(fullPath, e.target.value === "" ? "" : parseFloat(e.target.value))}
+              style={{ width: 80, padding: '0.3rem', borderRadius: '0.4rem', border: '1px solid #00e676', background: '#23272f', color: '#eee' }}
+              placeholder={value === "" ? "Enter value" : undefined}
+            />
+          </div>
+        );
+      } else {
+        return null;
+      }
+    });
+  }
+
+  function handleSave() {
+    setSaving(true);
+    fetch('http://127.0.0.1:8000/notification-settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ changes: edited }),
+    }).then(() => {
+      setSaving(false);
+      onClose();
+    });
+  }
+
+  if (!open) return null;
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      width: '100vw',
+      height: '100vh',
+      background: 'rgba(0,0,0,0.7)',
+      zIndex: 2000,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    }}>
+      <div style={{ background: '#23272f', borderRadius: '1.2rem', padding: '2rem', minWidth: 400, maxWidth: 600, color: '#eee', boxShadow: '0 4px 24px #000a', maxHeight: '70vh', overflowY: 'auto' }}>
+        <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 700 }}>Notification Settings</h2>
+        {loading ? <div>Loading...</div> : (
+          <form onSubmit={e => { e.preventDefault(); handleSave(); }}>
+            {renderFields(settings)}
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={onClose} style={{ padding: '0.7rem 2rem', borderRadius: '0.7rem', border: 'none', background: '#333', color: '#eee', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button type="submit" disabled={saving} style={{ padding: '0.7rem 2rem', borderRadius: '0.7rem', border: 'none', background: '#00e676', color: '#181818', fontWeight: 600, cursor: 'pointer' }}>{saving ? 'Saving...' : 'Save'}</button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function flattenMetrics(obj: any, prefix = ''): Record<string, number> {
   let result: Record<string, number> = {};
   for (const [key, value] of Object.entries(obj)) {
@@ -55,6 +189,7 @@ function MetricsGroup({ group, title, metric, data, history}: { group: string, t
             <div style={{ fontSize: '1.5rem', marginBottom: '1rem', color: '#00e676' }}>{value}</div>
             <Plot
               data={[
+
               {
                 x: Array.from({ length: history[key]?.length ?? 0 }, (_, i) => i),
                 y: history[key] ?? [],
@@ -100,6 +235,7 @@ function MetricsGroup({ group, title, metric, data, history}: { group: string, t
             />
             </div>
         ))}
+
       </div>
     </div>
   );
@@ -187,6 +323,7 @@ function TimeseriesGraph({
   let traces: any[] = [];
   if (multiDevice) {
     const devices = Array.from(new Set(data.map(d => d[deviceKey!])));
+
     traces = devices.map(device => ({
       x: data.filter(d => d[deviceKey!] === device).map(d => d[periodKey!]),
       y: data.filter(d => d[deviceKey!] === device).map(d => d[valueKey]),
@@ -428,6 +565,111 @@ function Page({ children }: { children: React.ReactNode }) {
   );
 }
 
+function EmailIcon({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      style={{
+        position: 'absolute',
+        top: '5rem',
+        left: '2rem',
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        zIndex: 1000,
+      }}
+      onClick={onClick}
+      title="Email Settings"
+    >
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <rect x="4" y="8" width="24" height="16" rx="3" fill="#23272f" stroke="#00e676" strokeWidth="2" />
+        <polyline points="4,8 16,20 28,8" fill="none" stroke="#00e676" strokeWidth="2" />
+      </svg>
+    </button>
+  );
+}
+
+function EmailSettingsModal({ open, onClose }: { open: boolean, onClose: () => void }) {
+  const [hostEmail, setHostEmail] = useState('');
+  const [appPassword, setAppPassword] = useState('');
+  const [subEmail, setSubEmail] = useState('');
+  const [subStatus, setSubStatus] = useState('');
+  const [hostStatus, setHostStatus] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  function handleAddHostEmail(e: any) {
+    e.preventDefault();
+    setLoading(true);
+    fetch('http://127.0.0.1:8000/host-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: hostEmail, app_password: appPassword })
+    })
+      .then(res => res.json())
+      .then(json => {
+        console.log(json);
+        setHostStatus(json.success ? 'Host email saved!' : json.error || 'Error');
+        setLoading(false);
+      });
+  }
+
+  function handleAddSubEmail(e: any) {
+    e.preventDefault();
+    setLoading(true);
+    fetch(`http://127.0.0.1:8000/emails/${encodeURIComponent(subEmail)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+      .then(res => res.json())
+      .then(json => {
+        setSubStatus(json.success ? 'Subscription email added!' : json.error || 'Error');
+        setLoading(false);
+      });
+  }
+
+  if (!open) return null;
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      width: '100vw',
+      height: '100vh',
+      background: 'rgba(0,0,0,0.7)',
+      zIndex: 2000,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    }}>
+      <div style={{ background: '#23272f', borderRadius: '1.2rem', padding: '2rem', minWidth: 400, maxWidth: 600, color: '#eee', boxShadow: '0 4px 24px #000a', maxHeight: '70vh', overflowY: 'auto' }}>
+        <h2 style={{ color: '#00e676', marginBottom: '1rem', fontWeight: 700 }}>Email Settings</h2>
+        <form onSubmit={handleAddHostEmail} style={{ marginBottom: '2rem' }}>
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ color: '#eee', marginRight: '1rem' }}>Host Email:</label>
+            <input type="email" value={hostEmail} onChange={e => setHostEmail(e.target.value)} style={{ width: 220, padding: '0.3rem', borderRadius: '0.4rem', border: '1px solid #00e676', background: '#23272f', color: '#eee' }} required />
+          </div>
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ color: '#eee', marginRight: '1rem' }}>App Password:</label>
+            <input type="password" value={appPassword} onChange={e => setAppPassword(e.target.value)} style={{ width: 220, padding: '0.3rem', borderRadius: '0.4rem', border: '1px solid #00e676', background: '#23272f', color: '#eee' }} required />
+          </div>
+          <button type="submit" style={{ padding: '0.7rem 2rem', borderRadius: '0.7rem', border: 'none', background: '#00e676', color: '#181818', fontWeight: 600, cursor: 'pointer' }}>Save Host Email</button>
+          {hostStatus && <div style={{ color: hostStatus.includes('saved') ? '#00e676' : '#ef5350', marginTop: '0.5rem' }}>{hostStatus}</div>}
+        </form>
+        <form onSubmit={handleAddSubEmail}>
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ color: '#eee', marginRight: '1rem' }}>Subscription Email:</label>
+            <input type="email" value={subEmail} onChange={e => setSubEmail(e.target.value)} style={{ width: 220, padding: '0.3rem', borderRadius: '0.4rem', border: '1px solid #00e676', background: '#23272f', color: '#eee' }} required />
+          </div>
+          <button type="submit" style={{ padding: '0.7rem 2rem', borderRadius: '0.7rem', border: 'none', background: '#00e676', color: '#181818', fontWeight: 600, cursor: 'pointer' }}>Add Subscription Email</button>
+          {subStatus && <div style={{ color: subStatus.includes('added') ? '#00e676' : '#ef5350', marginTop: '0.5rem' }}>{subStatus}</div>}
+        </form>
+        <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem', justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onClose} style={{ padding: '0.7rem 2rem', borderRadius: '0.7rem', border: 'none', background: '#333', color: '#eee', fontWeight: 600, cursor: 'pointer' }}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [metrics, setMetrics] = useState<any>(null);
   const [history, setHistory] = useState<Record<string, number[]>>({});
@@ -435,6 +677,8 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedPage, setSelectedPage] = useState('realtime');
   const [barRefreshKey, setBarRefreshKey] = useState(0);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
 
   const unitMappings: Record<string, string> = {
     // CPU
@@ -514,8 +758,13 @@ export default function App() {
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: '2rem',
+        position: 'relative',
       }}
     >
+      <NotifIcon onClick={() => setNotifOpen(true)} />
+      <EmailIcon onClick={() => setEmailOpen(true)} />
+      <NotifSettingsModal open={notifOpen} onClose={() => setNotifOpen(false)} />
+      <EmailSettingsModal open={emailOpen} onClose={() => setEmailOpen(false)} />
       <div
         style={{
           display: 'flex',
