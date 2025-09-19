@@ -1,9 +1,10 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import JSONResponse as jsonify
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import psutil
 import json
+from config import generate_notif_settings, update_settings, setup_email_config, check_thresholds
 
 from ping3 import ping
 import ifcfg 
@@ -14,6 +15,9 @@ import subprocess
 import psycopg2
 import os
 import datetime
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import smtplib
+from email.message import EmailMessage
 
 from live_info import (
     get_db_connection,
@@ -29,6 +33,7 @@ from live_info import (
 )
 
 from static_info import system_info
+from collections import defaultdict
 
 app = FastAPI()
 
@@ -40,15 +45,80 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+async def send_out_emails():
+    with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
+        config_path = os.path.join("email_config.json")
+        
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                email_config = json.load(f)
+        else:
+            return
+        
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT email FROM email_subscriptions")
+            data = cursor.fetchall()
+            emails = [row[0] for row in data]
+            msg = EmailMessage()
+            msg['Subject'] = f"Web Specs Log - Past Hour: {datetime.datetime.now()}"
+            msg['From'] = email_config['sender_email']
+            msg['To'] = ','.join(emails)
+
+            cursor.execute("""
+                UPDATE alerts
+                SET sent = TRUE
+                WHERE timestamp >= NOW() - INTERVAL '1 hour'
+            """)
+            conn.commit()
+
+            cursor.execute("""
+                SELECT component, timestamp, value, threshold_value
+                FROM alerts
+                WHERE timestamp >= NOW() - INTERVAL '1 hour'
+                ORDER BY timestamp DESC
+            """)
+            alerts = cursor.fetchall()
+            if alerts:
+
+                grouped = defaultdict(list)
+                for row in alerts:
+                    component, timestamp, value, threshold = row
+                    grouped[component].append(
+                        f"[{timestamp.strftime('%Y-%m-%d %H:%M:%S')}] Value={value}, Threshold={threshold}"
+                    )
+                # Build message content
+                alert_lines = []
+                for component, entries in grouped.items():
+                    alert_lines.append(f"{component}:")
+                    alert_lines.extend(entries)
+                    alert_lines.append("") 
+                msg.set_content('\n'.join(alert_lines))
+
+                smtp.starttls()
+                smtp.login(email_config['sender_email'], email_config['app_password'])
+                smtp.send_message(msg)
+            
+            else:
+                return
+
+scheduler = AsyncIOScheduler()
+scheduler.add_job(send_out_emails, 'interval', hours=1)
+scheduler.start()
+
 '''
 PLANS:
 - overall/monthly/yearly/daily/hourly average/max/min CPU (per CPU) /memory/swap memory percent usage --> backend done
-- overall/monthly/yearly/daily/hourly average/max/min IO read/write --> backend routes done
+- overall/monthly/yearly/daily/hourly average/max/min IO read/write --> backend routes done -->  done
 - cpu/memory/swap memory distribution, read/write distribution --> done
-- violin plot for disk io latency --> backend route done
-- static info page (ip, system info, etc)
-- notif system 
-- config page + thresholds for notif
+- violin plot for disk io latency --> backend route done --> done
+- static info page (ip, system info, etc) --> done
+- notif system --> working on
+    - correct thresholds (percent vs absolute values)
+        - default to '' for absolute, 80% for percents --> done
+    - add email subscriptions to frontend, with ability to set host email + app password --> done
+    - carry out notif system with new alerts table
+    - config page + thresholds for notif --> done but needs touch ups
 - possible RAG based chatbot......?
 '''
 
@@ -697,6 +767,60 @@ def io_write_time_timeseries(type: str = 'avg', groupby: str = 'hour'):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.get("/notification-settings")
+def get_notif_settings():
+    config_path = os.path.join("notif_config.json")
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            return json.load(f)
+
+@app.patch("/notification-settings")
+async def update_notif_settings(request: Request):
+    data = await request.json()
+    changes = data.get("changes", {})
+    print(f"changes testing: {changes}")
+    if changes:
+        update_settings(changes)
+
+@app.post("/emails/{email}")
+def add_email(email: str):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT email FROM email_subscriptions WHERE email = %s", (email,))
+            result = cursor.fetchone()
+            if result:
+                return jsonify({"success": False, "error": "Email already added to notification list."}), 409
+            else:
+                cursor.execute("INSERT INTO email_subscriptions (email) VALUES (%s)", (email,))
+                conn.commit()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        conn.rollback()
+        print(e)
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.post("/host-email")
+async def add_host_email(request: Request):
+    try:
+        data = await request.json()
+        host_email = data.get("email", None)
+        app_password = data.get("app_password", None)
+        print("after")
+
+        if not host_email or not app_password:
+            return jsonify({"success": False, "error": "host email or app password not provided"}), 400
+        print(host_email)
+        print(app_password)
+        setup_email_config(host_email, app_password)
+        return jsonify({"success": True}), 200
+    
+    except Exception as e:
+        print(e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
 #Web Socket Routes
 @app.websocket("/ws/metrics")
 async def metric_ws(ws: WebSocket):
@@ -734,6 +858,10 @@ async def metric_ws(ws: WebSocket):
             system_info['io'] = get_disk_io_counters()
             
             log_data(system_info)
+
+            generate_notif_settings(system_info)
+
+            check_thresholds(system_info)
 
             await ws.send_text(json.dumps(system_info))
             await asyncio.sleep(3)
